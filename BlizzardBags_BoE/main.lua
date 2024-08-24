@@ -34,8 +34,8 @@ local tonumber = tonumber
 
 -- WoW API
 local CreateFrame = CreateFrame
-local GetContainerItemInfo = GetContainerItemInfo
-local GetItemInfo = GetItemInfo
+local GetContainerItemInfo = C_Container.GetContainerItemInfo
+local GetItemInfo = C_Item.GetItemInfo
 
 -- WoW Strings
 local S_ITEM_BOUND1 = ITEM_SOULBOUND
@@ -59,7 +59,8 @@ GP_ItemButtonInfoFrameCache = Cache
 -- *Just enUS so far.
 local L = {
 	["BoE"] = "BoE", -- Bind on Equip
-	["BoU"] = "BoU"  -- Bind on Use
+	["BoU"] = "BoU", -- Bind on Use
+	["W"] = "W", -- Warbound
 }
 
 -- Quality/Rarity colors for faster lookups
@@ -75,8 +76,81 @@ local colors = {
 	[8] = { 79/255, 196/255, 225/255 } -- Blizzard
 }
 
+local BindTypes = {
+    Soulbound = "Soulbound",
+    Warbound = "Warbound",
+    BoE = "BoE"
+}
+
 -- Callbacks
 -----------------------------------------------------------
+local accountBoundTexts = {
+    ITEM_ACCOUNTBOUND,
+    ITEM_ACCOUNTBOUND_UNTIL_EQUIP,
+    ITEM_BIND_TO_ACCOUNT,
+    ITEM_BIND_TO_ACCOUNT_UNTIL_EQUIP,
+}
+
+local function IsItemWarbound(itemLink, bag, slot, tooltipData)
+    -- Returns whether the item is warbound or not.
+    if not tooltipData then
+        if bag and slot then
+            tooltipData = C_TooltipInfo.GetBagItem(bag, slot)
+        else
+            tooltipData = C_TooltipInfo.GetHyperlink(itemLink)
+        end
+    end
+    if tooltipData and tooltipData.lines then
+        for i, line in pairs(tooltipData.lines) do
+            for _, accountBoundText in pairs(accountBoundTexts) do
+                if line.leftText == accountBoundText then
+                    return true
+                end
+                if line.rightText == accountBoundText then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function IsItemSoulbound(itemLink, bag, slot, tooltipData)
+    -- Returns whether the item is soulbound or not.
+    if bag and slot then
+        return C_Container.GetContainerItemInfo(bag, slot).isBound
+    end
+
+    if tooltipData and tooltipData.lines then
+        for i, line in pairs(tooltipData.lines) do
+            if line.leftText == ITEM_SOULBOUND then
+                return true
+            end
+            if line.rightText == ITEM_SOULBOUND then
+                return true
+            end
+        end
+    end
+
+    return select(14, C_Item.GetItemInfo(itemLink)) == 1
+end
+
+local function CalculateType(itemLink, bag, slot, tooltipData)
+    local warbound = IsItemWarbound(itemLink, bag, slot, tooltipData)
+    if warbound == nil then return nil end
+    if warbound then
+        return BindTypes.Warbound
+    end
+
+    local soulbound = IsItemSoulbound(itemLink, bag, slot, tooltipData)
+    if soulbound == nil then return nil end
+    if soulbound then
+        return BindTypes.Soulbound
+    end
+
+    return BindTypes.BoE
+end
+
 -- Update an itembutton's bind status
 local Update = function(self, bag, slot)
 	local message, rarity, mult, itemLink, isBound, _
@@ -92,14 +166,14 @@ local Update = function(self, bag, slot)
 	end
 	if (itemLink) then
 		local _, _, itemQuality, _, _, _, _, _, _, _, _, _, _, bindType = GetItemInfo(itemLink)
-
+		local tooltip_bind_type = CalculateType(itemLink, bag, slot)
 		-- *in retail, all items can bind now thanks to transmogs
-		if (itemQuality and ((Private.IsRetail and itemQuality >= 0) or itemQuality > 1)) and (bindType == 2 or bindType == 3) then
+		if (itemQuality and ((Private.IsRetail and itemQuality >= 0) or itemQuality > 1)) and tooltip_bind_type ~= BindTypes.Soulbound then
 
-			-- If the item is bound,
+			-- If the item is Soulbound,
 			-- the bind type is irrelevant.
 			local showStatus = true
-			if (isBound) then
+			if (tooltip_bind_type == BindTypes.Soulbound) then
 				showStatus = nil
 			end
 
@@ -127,7 +201,7 @@ local Update = function(self, bag, slot)
 			end
 
 			if (showStatus) then
-				message = (bindType == 3) and L["BoU"] or L["BoE"]
+				message = (bindType == 3) and L["BoU"] or (bindType == 2) and L["BoE"] or (tooltip_bind_type == BindTypes.Warbound) and L["W"] 
 				rarity = itemQuality
 				mult = (itemRarity ~= 3 and itemRarity ~= 4) and 4/5
 			end
@@ -324,7 +398,6 @@ Private.OnEnable = function(self)
 
 	-- For single item changes
 	self:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
-
 end
 
 -- Setup the environment
