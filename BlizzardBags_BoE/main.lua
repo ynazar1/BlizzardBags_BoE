@@ -201,7 +201,7 @@ local Update = function(self, bag, slot)
 			end
 
 			if (showStatus) then
-				message = (bindType == 3) and L["BoU"] or (bindType == 2) and L["BoE"] or (tooltip_bind_type == BindTypes.Warbound) and L["W"] 
+				message = (bindType == 3) and L["BoU"] or (tooltip_bind_type == BindTypes.Warbound) and L["W"] or (bindType == 2) and L["BoE"]
 				rarity = itemQuality
 				mult = (itemRarity ~= 3 and itemRarity ~= 4) and 4/5
 			end
